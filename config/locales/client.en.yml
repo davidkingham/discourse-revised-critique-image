@@ -1,0 +1,19 @@
+en:
+  js:
+    discourse_revised_critique_image:
+      button_label: "Share Revised Version"
+      eligible_message: "You’ve received feedback on this image. You can share a revised version at the top of your original post."
+      modal:
+        title: "Share a revised version"
+        description: "Upload a revised version of your image. It will be added to the top of your original post."
+        submit: "Share revised version"
+        submitting: "Adding…"
+        note_label: "What did you change?"
+        note_helper: "Optional. Share a short note about what you adjusted after receiving feedback."
+        note_placeholder: "Example: I opened up the shadows, simplified the crop, and reduced the saturation in the background."
+        note_counter: "%{remaining} characters remaining"
+      success: "Revised image added."
+      errors:
+        upload_required: "Please upload an image first."
+        note_too_long: "Your note is too long. Please shorten it to %{max} characters or fewer."
+        generic: "Something went wrong. Please try again."

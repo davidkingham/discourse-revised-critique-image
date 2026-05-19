@@ -1,0 +1,33 @@
+plugins:
+  revised_critique_enabled:
+    default: true
+    client: true
+  revised_critique_category_id:
+    default: 0
+    type: integer
+    client: true
+  revised_critique_button_label:
+    default: "Share Revised Version"
+    client: true
+  revised_critique_title_marker:
+    default: "(+revised)"
+    client: false
+  revised_critique_note_max_length:
+    default: 500
+    type: integer
+    client: true
+  revised_critique_heading:
+    default: "Revised Version"
+    client: false
+  revised_critique_require_reply_from_other_user:
+    default: true
+    client: true
+  revised_critique_allow_replace:
+    default: false
+    client: true
+  revised_critique_add_notice_reply:
+    default: false
+    client: false
+  revised_critique_notice_reply_username:
+    default: "system"
+    client: false

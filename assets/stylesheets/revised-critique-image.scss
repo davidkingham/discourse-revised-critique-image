@@ -1,0 +1,63 @@
+.revised-image-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3, 0.75rem);
+  padding: var(--space-3, 0.75rem) var(--space-4, 1rem);
+  margin: var(--space-3, 0.75rem) 0;
+  background: var(--primary-very-low);
+  border: 1px solid var(--primary-low);
+  border-radius: var(--d-border-radius, 4px);
+
+  &__message {
+    flex: 1 1 280px;
+    margin: 0;
+    color: var(--primary-medium);
+    font-size: var(--font-down-1);
+    line-height: var(--line-height-medium);
+  }
+
+  &__button {
+    flex: 0 0 auto;
+  }
+}
+
+.revised-image-modal {
+  &__description {
+    margin-bottom: var(--space-3, 0.75rem);
+    color: var(--primary-medium);
+  }
+
+  &__note {
+    margin-top: var(--space-4, 1rem);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2, 0.5rem);
+  }
+
+  &__note-label {
+    font-weight: 700;
+  }
+
+  &__note-helper {
+    margin: 0;
+    color: var(--primary-medium);
+    font-size: var(--font-down-1);
+  }
+
+  &__note-input {
+    width: 100%;
+    resize: vertical;
+    min-height: 4.5rem;
+  }
+
+  &__note-counter {
+    margin: 0;
+    color: var(--primary-medium);
+    font-size: var(--font-down-1);
+
+    &--over {
+      color: var(--danger);
+    }
+  }
+}

@@ -1,0 +1,26 @@
+# Ruby
+*.gem
+*.rbc
+/.bundle/
+/vendor/bundle
+/coverage/
+/tmp/
+/log/
+
+# Node / pnpm
+node_modules/
+pnpm-lock.yaml.bak
+*.log
+.pnpm-debug.log*
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+.ruby-version
+.tool-versions
+
+# Discourse plugin build artifacts
+/auto_generated/
