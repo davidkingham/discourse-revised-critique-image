@@ -1,4 +1,4 @@
-# discourse-revised-critique-image
+# discourse-npn-revised-critique
 
 A [Discourse](https://discourse.org) plugin that lets the original poster of an
 image-critique topic share a **revised version** of their image after they've
@@ -76,7 +76,7 @@ hooks:
         cd: $home/plugins
         cmd:
           - git clone https://github.com/discourse/docker_manager.git
-          - git clone https://github.com/davidkingham/discourse-revised-critique-image.git
+          - git clone https://github.com/davidkingham/discourse-npn-revised-critique.git
 ```
 
 Then rebuild your container:
@@ -144,13 +144,13 @@ Tests run against a local Discourse dev environment:
 
 ```bash
 # Request specs (controller + service + security guards)
-bin/rspec plugins/discourse-revised-critique-image/spec/requests/
+bin/rspec plugins/discourse-npn-revised-critique/spec/requests/
 
 # System specs (banner visibility, modal flow)
-bin/rspec plugins/discourse-revised-critique-image/spec/system/
+bin/rspec plugins/discourse-npn-revised-critique/spec/system/
 
 # Lint
-bin/lint --fix plugins/discourse-revised-critique-image
+bin/lint --fix plugins/discourse-npn-revised-critique
 ```
 
 The plugin uses Discourse's standard `topic-above-posts` plugin outlet for

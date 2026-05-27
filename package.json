@@ -1,5 +1,5 @@
 {
-  "name": "discourse-revised-critique-image",
+  "name": "discourse-npn-revised-critique",
   "private": true,
   "devDependencies": {
     "@discourse/lint-configs": "3.0.1",

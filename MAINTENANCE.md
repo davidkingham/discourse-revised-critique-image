@@ -4,21 +4,21 @@ Notes for keeping the plugin healthy as Discourse evolves.
 
 ## Running specs locally
 
-The plugin lives at `plugins/discourse-revised-critique-image/` inside a
+The plugin lives at `plugins/discourse-npn-revised-critique/` inside a
 local Discourse checkout. From the Discourse repo root:
 
 ```bash
 # Request specs (controller + service + security guards)
-bin/rspec plugins/discourse-revised-critique-image/spec/requests/
+bin/rspec plugins/discourse-npn-revised-critique/spec/requests/
 
 # System specs (banner visibility + modal flow, needs Playwright)
-bin/rspec plugins/discourse-revised-critique-image/spec/system/
+bin/rspec plugins/discourse-npn-revised-critique/spec/system/
 
 # Whole plugin suite
-bin/rspec plugins/discourse-revised-critique-image/spec/
+bin/rspec plugins/discourse-npn-revised-critique/spec/
 
 # Lint everything
-bin/lint --fix plugins/discourse-revised-critique-image
+bin/lint --fix plugins/discourse-npn-revised-critique
 ```
 
 If you change a `.gjs`/`.scss` file and your **system specs** suddenly stop
@@ -47,7 +47,7 @@ against an upcoming Discourse release **before** it lands:
    git fetch && git checkout release/2026.4
    bundle install
    pnpm --filter discourse install
-   bin/rspec plugins/discourse-revised-critique-image/spec/
+   bin/rspec plugins/discourse-npn-revised-critique/spec/
    ```
 
 2. **In CI**: trigger the workflow against the upcoming branch by editing
@@ -106,8 +106,8 @@ If a release of the plugin breaks production:
        - exec:
            cd: $home/plugins
            cmd:
-             - git clone https://github.com/davidkingham/discourse-revised-critique-image.git
-             - cd discourse-revised-critique-image && git checkout v2.0.0
+             - git clone https://github.com/davidkingham/discourse-npn-revised-critique.git
+             - cd discourse-npn-revised-critique && git checkout v2.0.0
    ```
 
 3. **Rebuild**:

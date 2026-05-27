@@ -1,10 +1,10 @@
 # frozen_string_literal: true
 
-# name: discourse-revised-critique-image
+# name: discourse-npn-revised-critique
 # about: Lets the OP of an image critique topic share a revised version after receiving feedback.
 # version: 2.0.0
 # authors: David Kingham
-# url: https://github.com/davidkingham/discourse-revised-critique-image
+# url: https://github.com/davidkingham/discourse-npn-revised-critique
 # license: MIT
 
 enabled_site_setting :revised_critique_enabled
@@ -16,7 +16,7 @@ register_svg_icon "arrows-rotate"
 register_svg_icon "plus"
 
 module ::DiscourseRevisedCritiqueImage
-  PLUGIN_NAME = "discourse-revised-critique-image"
+  PLUGIN_NAME = "discourse-npn-revised-critique"
 
   # JSON-encoded history of every revision a topic has had. Source of truth
   # from v2.0 onwards. Each entry shape is documented in RevisionHistory.
