@@ -7,7 +7,9 @@ describe "NPN revision image metadata" do
   fab!(:category)
   fab!(:owner) { Fabricate(:user, trust_level: TrustLevel[1]) }
   fab!(:other_user) { Fabricate(:user, trust_level: TrustLevel[1]) }
-  fab!(:topic) { Fabricate(:topic, category: category, user: owner, title: "Critique me") }
+  fab!(:topic) do
+    Fabricate(:topic, category: category, user: owner, title: "Critique my image please")
+  end
   fab!(:first_post) do
     Fabricate(:post, topic: topic, user: owner, raw: "Original critique image post.")
   end
