@@ -102,23 +102,31 @@ describe "NPN revision image metadata" do
   end
 
   it "does not touch npn_original_* fields owned by the submissions plugin" do
+    # The submissions plugin registers these custom_field types in
+    # production; we don't here, so values round-trip as strings. That's
+    # fine for this test — we only care that this plugin doesn't mutate
+    # whatever the submissions plugin wrote. Capture the post-save state
+    # as the source of truth, then assert it's unchanged after our write.
     topic.custom_fields["npn_original_primary_image_upload_id"] = 123
     topic.custom_fields["npn_original_primary_image_url"] = "/uploads/default/original/1X/orig.jpg"
     topic.custom_fields["npn_original_image_upload_ids"] = [123]
     topic.custom_fields["npn_original_image_count"] = 1
     topic.save_custom_fields(true)
 
+    original_values =
+      topic.reload.custom_fields.slice(
+        "npn_original_primary_image_upload_id",
+        "npn_original_primary_image_url",
+        "npn_original_image_upload_ids",
+        "npn_original_image_count",
+      )
+
     u1 = fab_upload(filename: "r1.png")
     post endpoint, params: { upload_id: u1.id }
     expect(response.status).to eq(200)
 
-    topic.reload
-    expect(topic.custom_fields["npn_original_primary_image_upload_id"]).to eq(123)
-    expect(topic.custom_fields["npn_original_primary_image_url"]).to eq(
-      "/uploads/default/original/1X/orig.jpg",
-    )
-    expect(topic.custom_fields["npn_original_image_upload_ids"]).to eq([123])
-    expect(topic.custom_fields["npn_original_image_count"]).to eq(1)
+    after_values = topic.reload.custom_fields.slice(*original_values.keys)
+    expect(after_values).to eq(original_values)
   end
 
   it "still completes the revision and logs a warning when the npn snapshot raises" do
