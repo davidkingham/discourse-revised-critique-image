@@ -25,25 +25,49 @@ module DiscourseRevisedCritiqueImage
       first_post = @topic.first_post
       return failure(:first_post_missing) if first_post.blank?
 
-      apply_history_change!
+      # Wrap the JSON history mutation and the PostRevisor edit in a
+      # single Topic.transaction so a revise! refusal (returns false) or
+      # exception rolls back BOTH. Pre-Phase-3-hardening, a returns-false
+      # would leave the topic carrying revision custom_fields the post
+      # body never received — a phantom revision visible to serializers
+      # but missing from the actual rendered post.
+      #
+      # Trade-offs are identical to ProjectRevisionAdder: Sidekiq jobs
+      # enqueued from after_save (rather than after_commit) callbacks
+      # would still fire even on rollback. Discourse's first-party
+      # post-edit callbacks are after_commit, so the corner case is
+      # narrow and was already present before this commit.
+      #
+      # maybe_post_notice_reply! stays OUTSIDE the transaction: the notice
+      # is a separate post unrelated to the revision storage, and we want
+      # a notice-creation failure to bubble after the revision is durably
+      # saved rather than unwinding the (otherwise successful) revision.
+      saved = false
 
-      new_raw = build_new_raw(first_post.raw)
-      fields = { raw: new_raw }
-      fields[:title] = title_with_marker if title_with_marker
+      Topic.transaction do
+        apply_history_change!
 
-      revisor = PostRevisor.new(first_post, @topic)
-      # skip_validations: the OP may legitimately have a short raw body (e.g.
-      # just an image with no text), which would otherwise trip min-body-length
-      # validations on edit. Permissions are already enforced by Eligibility
-      # and (defence-in-depth) by `Guardian#can_edit?` in the controller.
-      saved =
-        revisor.revise!(
-          @user,
-          fields,
-          skip_validations: true,
-          bypass_bump: true,
-          skip_revision: false,
-        )
+        new_raw = build_new_raw(first_post.raw)
+        fields = { raw: new_raw }
+        fields[:title] = title_with_marker if title_with_marker
+
+        # skip_validations: the OP may legitimately have a short raw body
+        # (e.g. just an image with no text), which would otherwise trip
+        # min-body-length validations on edit. Permissions are already
+        # enforced by Eligibility and (defence-in-depth) by
+        # `Guardian#can_edit?` in the controller.
+        saved =
+          PostRevisor.new(first_post, @topic).revise!(
+            @user,
+            fields,
+            skip_validations: true,
+            bypass_bump: true,
+            skip_revision: false,
+          )
+
+        raise ActiveRecord::Rollback unless saved
+      end
+
       return failure(:revision_failed) unless saved
 
       maybe_post_notice_reply!
