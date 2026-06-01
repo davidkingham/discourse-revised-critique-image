@@ -27,6 +27,17 @@ plugins:
     type: integer
     client: true
     min: 1
+  revised_critique_max_project_revisions:
+    default: 3
+    type: integer
+    client: true
+    min: 1
+  revised_critique_max_project_images:
+    default: 12
+    type: integer
+    client: true
+    min: 1
+    max: 12
   revised_critique_add_notice_reply:
     default: false
     client: false

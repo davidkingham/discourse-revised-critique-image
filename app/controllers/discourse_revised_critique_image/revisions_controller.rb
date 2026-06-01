@@ -57,16 +57,8 @@ module DiscourseRevisedCritiqueImage
       Eligibility::MODES.include?(sym) ? sym : nil
     end
 
-    # Disallow SVG (different cook path / inline content) and require that the
-    # Upload record actually looks like a raster image (width recorded by
-    # Discourse during processing). This is a server-side check independent
-    # of the frontend uploader's image-only filter.
     def valid_image_upload?(upload)
-      extension = upload.extension.to_s.downcase
-      return false if extension.blank?
-      return false if extension == "svg" || extension == "svgz"
-      return false unless FileHelper.is_supported_image?("image.#{extension}")
-      upload.width.to_i.positive? && upload.height.to_i.positive?
+      ImageUploadValidation.valid_image_upload?(upload)
     end
 
     def apply_rate_limit!

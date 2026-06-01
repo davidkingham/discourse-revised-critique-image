@@ -12,7 +12,12 @@ module DiscourseRevisedCritiqueImage
                       :revised_critique_project_detected,
                       :revised_critique_project_valid,
                       :revised_critique_project_image_count,
-                      :revised_critique_project_error_key
+                      :revised_critique_project_error_key,
+                      :project_revision_count,
+                      :project_revision_max_revisions,
+                      :project_revision_max_images,
+                      :can_add_project_revision,
+                      :can_replace_latest_project_revision
     end
 
     def revised_critique_image
@@ -77,10 +82,41 @@ module DiscourseRevisedCritiqueImage
       project_reader_result.error_key&.to_s
     end
 
+    # ---- Phase 3: project revision flow ---------------------------------
+    # Read-only state for any UI that wants to know whether the project
+    # editor can be reached and how many revisions already exist. Mirrors
+    # the single-image attribute set (revision_count + can_* booleans).
+
+    def project_revision_count
+      project_history.count
+    end
+
+    def project_revision_max_revisions
+      project_history.max
+    end
+
+    def project_revision_max_images
+      project_history.max_images
+    end
+
+    def can_add_project_revision
+      return false if scope&.user.blank?
+      ProjectEligibility.check(topic: object.topic, user: scope.user, mode: :add).ok
+    end
+
+    def can_replace_latest_project_revision
+      return false if scope&.user.blank?
+      ProjectEligibility.check(topic: object.topic, user: scope.user, mode: :replace_latest).ok
+    end
+
     private
 
     def history
       @_revised_critique_history ||= RevisionHistory.for(object.topic)
+    end
+
+    def project_history
+      @_project_revision_history ||= ProjectRevisionHistory.for(object.topic)
     end
 
     # Compute once per serializer instance. Wrapped in a rescue so a bug
