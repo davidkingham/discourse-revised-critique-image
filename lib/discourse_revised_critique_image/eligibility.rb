@@ -8,6 +8,14 @@ module DiscourseRevisedCritiqueImage
   class Eligibility
     MODES = %i[add replace_latest].freeze
 
+    # Tag name used by the submissions plugin (and by hand-curation on
+    # legacy topics) to mark a topic as belonging to the project critique
+    # flow. The single-image revision flow refuses any topic carrying it,
+    # even if structured project data is missing or malformed — the tag
+    # alone is treated as a strong "do not touch the first post" signal.
+    PROJECT_TAG_NAME = "project"
+    PROJECT_SUBMISSION_TYPE = "project_critique"
+
     Result = Struct.new(:ok, :error_key, keyword_init: true)
 
     def self.check(topic:, user:, mode: :add)
@@ -87,20 +95,49 @@ module DiscourseRevisedCritiqueImage
         .exists?
     end
 
-    # Treat any topic the reader recognises as a project critique as off
-    # limits for the single-image flow. A reader exception is swallowed and
-    # treated as "not a project" so a bug in the reader can't lock out
-    # legitimate single-image users; the reader's own non-mutation guarantee
-    # means the worst case is that single-image proceeds on a topic the
-    # reader couldn't classify, which is the existing pre-Phase-2 behaviour.
+    # Tiered project-signal check. Each probe runs independently with
+    # its own narrow rescue so a failure in one source can never bypass
+    # the others. Any positive signal blocks; only the absence of all
+    # signals lets the single-image flow proceed.
+    #
+    # Cheapest signals run first (tag check + raw custom_field read) so
+    # an obvious project topic doesn't pay the cost of building a
+    # ProjectSubmissionReader::Result. Crucially, this means that even
+    # if the reader raises or returns invalid for a malformed payload,
+    # a topic tagged "project" or flagged via npn_submission_type still
+    # gets blocked.
     def project_topic?
+      project_tag_present? || project_submission_type_set? || reader_says_project?
+    end
+
+    def project_tag_present?
+      return false unless @topic.respond_to?(:tags)
+      @topic.tags.exists?(name: PROJECT_TAG_NAME)
+    rescue => e
+      log_probe_failure(:tag, e)
+      false
+    end
+
+    def project_submission_type_set?
+      key = SubmissionsCompat.submission_type_key
+      @topic.custom_fields[key].to_s == PROJECT_SUBMISSION_TYPE
+    rescue => e
+      log_probe_failure(:submission_type, e)
+      false
+    end
+
+    def reader_says_project?
       ProjectSubmissionReader.read(@topic).project?
     rescue => e
-      Rails.logger.warn(
-        "discourse-revised-critique-image: project_topic? probe raised for " \
-          "topic #{@topic&.id}: #{e.class}: #{e.message}",
-      )
+      log_probe_failure(:reader, e)
       false
+    end
+
+    def log_probe_failure(probe, error)
+      Rails.logger.warn(
+        "discourse-revised-critique-image: #{probe} project probe raised for " \
+          "topic #{@topic&.id}: #{error.class}: #{error.message}",
+      )
     end
 
     def failure(key)
