@@ -31,6 +31,9 @@ module DiscourseRevisedCritiqueImage
     end
 
     def call
+      # ---- Phase 1: read-only validation -------------------------------
+      # No writes happen here. Anything that should refuse the request
+      # before we touch the database fails fast.
       first_post = @topic.first_post
       return failure(:first_post_missing) if first_post.blank?
 
@@ -46,45 +49,67 @@ module DiscourseRevisedCritiqueImage
       return failure(:project_markers_missing) if end_offset <= begin_offset
 
       built = build_image_records(reader)
-      return built if built.is_a?(Result) # failure short-circuit
+      return built if built.is_a?(Result)
 
-      # Mutate the JSON history first so the renderer sees the up-to-date
-      # set. If the post update later fails we leak a saved JSON entry,
-      # which is harmless data-wise (the renderer is called from history)
-      # but matters as a known limitation — documented in COMPATIBILITY.md.
       history = ProjectRevisionHistory.for(@topic)
       return failure(:max_project_revisions_reached) if @mode == :add && history.at_max?
       return failure(:no_project_revision_to_replace) if @mode == :replace_latest && history.empty?
+      return failure(:invalid_mode) if %i[add replace_latest].exclude?(@mode)
 
-      entry =
-        case @mode
-        when :add
-          history.add!(images: built, user: @user, note: @note)
-        when :replace_latest
-          history.replace_latest!(images: built, user: @user, note: @note)
-        else
-          return failure(:invalid_mode)
-        end
+      # ---- Phase 2: atomic write ---------------------------------------
+      # Wrap the history mutation and the PostRevisor edit in a single
+      # Topic.transaction so a failure in either rolls back BOTH. Without
+      # this, a returns-false from PostRevisor would leave the JSON
+      # history pointing at a revision the post body never received.
+      #
+      # The transaction is safe because:
+      # - history.add!/replace_latest! is a plain ActiveRecord save on
+      #   the topic_custom_fields rows, so the rollback fully undoes it.
+      # - PostRevisor#revise! writes Post, Topic, and PostRevision rows
+      #   inside the same transaction; rollback undoes those too.
+      # - Sidekiq job enqueues happen from after_commit callbacks, so a
+      #   rollback prevents them from firing in the first place. Anything
+      #   that bypasses after_commit (rare; mostly background indexers
+      #   triggered from after_save) IS leakable, but matches the
+      #   single-image flow's existing exposure, and is preferred to the
+      #   pre-Phase-3 risk of a "phantom revision" in the JSON store.
+      entry = nil
+      revised = false
 
-      rendered =
-        ProjectRevisionRenderer.render(
-          original_data: reader_payload(reader),
-          revisions: history.entries,
-        )
+      Topic.transaction do
+        entry =
+          case @mode
+          when :add
+            history.add!(images: built, user: @user, note: @note)
+          when :replace_latest
+            history.replace_latest!(images: built, user: @user, note: @note)
+          end
 
-      new_raw = splice_between_markers(raw, begin_marker, end_marker, rendered)
+        rendered =
+          ProjectRevisionRenderer.render(
+            original_data: reader_payload(reader),
+            revisions: history.entries,
+          )
 
-      fields = { raw: new_raw }
-      fields[:title] = title_with_marker if title_with_marker
+        new_raw = splice_between_markers(raw, begin_marker, end_marker, rendered)
 
-      revised =
-        PostRevisor.new(first_post, @topic).revise!(
-          @user,
-          fields,
-          skip_validations: true,
-          bypass_bump: true,
-          skip_revision: false,
-        )
+        fields = { raw: new_raw }
+        fields[:title] = title_with_marker if title_with_marker
+
+        revised =
+          PostRevisor.new(first_post, @topic).revise!(
+            @user,
+            fields,
+            skip_validations: true,
+            bypass_bump: true,
+            skip_revision: false,
+          )
+
+        # PostRevisor#revise! returns false on a refusal that doesn't
+        # raise (e.g. post locked, no-op edit). Rollback the JSON write
+        # alongside so the two sides of the storage stay in sync.
+        raise ActiveRecord::Rollback unless revised
+      end
 
       return failure(:revision_failed) unless revised
 
