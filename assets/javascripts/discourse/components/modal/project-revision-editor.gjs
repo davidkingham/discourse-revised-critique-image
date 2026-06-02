@@ -110,6 +110,15 @@ export default class ProjectRevisionEditor extends Component {
     return !this.submitting && this.images.length > 0;
   }
 
+  // Pre-computed indices for template comparisons. Glimmer can only call
+  // bare component methods from templates when they're explicitly bound
+  // (e.g. with `@action`); exposing these as getters lets the template
+  // use plain `eq` / comparison helpers, which is the conventional
+  // Discourse pattern.
+  get lastIndex() {
+    return this.images.length - 1;
+  }
+
   get title() {
     if (this.isReplaceMode) {
       return i18n(
@@ -161,10 +170,12 @@ export default class ProjectRevisionEditor extends Component {
     }
   }
 
-  isLast(index) {
-    return index >= this.images.length - 1;
-  }
-
+  // positionLabel doesn't reference `this`, so the template's
+  // `{{this.positionLabel idx}}` happens to work even unbound; but mark
+  // it @action anyway to make the convention consistent with the rest
+  // of the file and to survive any future refactor that adds a `this.`
+  // reference inside.
+  @action
   positionLabel(index) {
     return i18n("discourse_revised_critique_image.project_editor.image_label", {
       number: index + 1,
@@ -201,7 +212,7 @@ export default class ProjectRevisionEditor extends Component {
 
   @action
   moveRight(index) {
-    if (this.isLast(index)) {
+    if (index >= this.lastIndex) {
       return;
     }
     const next = [...this.images];
@@ -405,7 +416,7 @@ export default class ProjectRevisionEditor extends Component {
                   <DButton
                     class="project-revision-editor__card-move-right"
                     @action={{fn this.moveRight idx}}
-                    @disabled={{this.isLast idx}}
+                    @disabled={{eq idx this.lastIndex}}
                     @icon="arrow-right"
                     @label="discourse_revised_critique_image.project_editor.move_right"
                   />
