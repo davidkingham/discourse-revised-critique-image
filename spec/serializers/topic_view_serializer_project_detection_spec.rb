@@ -175,4 +175,54 @@ describe TopicViewSerializer do
       expect(json["can_add_revised_critique_image"]).to eq(true)
     end
   end
+
+  # Phase 4: project_revision_editor baseline payload — visible only to
+  # users with edit rights so normal members don't receive image URLs
+  # they have no use for.
+  describe "project_revision_editor baseline" do
+    let!(:reply) { Fabricate(:post, topic: topic, user: Fabricate(:user), raw: "Feedback") }
+
+    before do
+      SiteSetting.revised_critique_category_id = category.id
+      install_project_payload!(images: [well_formed_image(position: 1)])
+    end
+
+    it "exposes the original baseline to the OP" do
+      json = serialize(owner)
+      editor = json["project_revision_editor"]
+      expect(editor).to be_a(Hash)
+      expect(editor["original"]).to be_a(Hash)
+      expect(editor["original"]["images"].length).to eq(1)
+    end
+
+    it "is hidden from non-OP non-staff viewers" do
+      other = Fabricate(:user)
+      json = serialize(other)
+      expect(json["project_revision_editor"]).to be_nil
+    end
+
+    it "includes a 'latest' baseline once at least one revision exists" do
+      DiscourseRevisedCritiqueImage::ProjectRevisionHistory.for(topic).add!(
+        images: [
+          {
+            "id" => "slot-a",
+            "position" => 1,
+            "upload_id" => 999,
+            "short_url" => "upload://abc.jpeg",
+            "caption" => "rev1 caption",
+            "alt" => "Image 1",
+            "status" => "new",
+          },
+        ],
+        user: owner,
+        note: "first revision",
+      )
+
+      json = serialize(owner)
+      editor = json["project_revision_editor"]
+      expect(editor["latest"]).to be_a(Hash)
+      expect(editor["latest"]["note"]).to eq("first revision")
+      expect(editor["latest"]["images"].first["caption"]).to eq("rev1 caption")
+    end
+  end
 end

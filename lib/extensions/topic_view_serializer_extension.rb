@@ -17,7 +17,8 @@ module DiscourseRevisedCritiqueImage
                       :project_revision_max_revisions,
                       :project_revision_max_images,
                       :can_add_project_revision,
-                      :can_replace_latest_project_revision
+                      :can_replace_latest_project_revision,
+                      :project_revision_editor
     end
 
     def revised_critique_image
@@ -109,6 +110,35 @@ module DiscourseRevisedCritiqueImage
       ProjectEligibility.check(topic: object.topic, user: scope.user, mode: :replace_latest).ok
     end
 
+    # Per-viewer baseline payload the project editor loads on open.
+    # Only emitted when the viewer can actually use the editor (OP or
+    # staff with edit rights), so normal members never receive the
+    # full image+URL data.
+    #
+    # Shape:
+    #   {
+    #     "original" => { "images" => [...], "note" => "" }  (when project detected + valid)
+    #     "latest"   => { "images" => [...], "note" => "..." } (when at least one revision exists)
+    #   }
+    #
+    # `images` entries include `image_url` so the editor can display
+    # thumbnails without a second round-trip; `short_url` is also
+    # included so the save payload doesn't need to re-resolve uploads.
+    def project_revision_editor
+      return nil unless can_use_editor?
+
+      payload = {}
+      reader = project_reader_result
+      if reader.project? && reader.valid?
+        payload["original"] = build_editor_payload(reader.images, note: nil)
+      end
+
+      latest = project_history.latest
+      payload["latest"] = build_editor_payload(latest["images"], note: latest["note"]) if latest
+
+      payload
+    end
+
     private
 
     def history
@@ -117,6 +147,33 @@ module DiscourseRevisedCritiqueImage
 
     def project_history
       @_project_revision_history ||= ProjectRevisionHistory.for(object.topic)
+    end
+
+    def can_use_editor?
+      return false if scope&.user.blank?
+      can_add_project_revision || can_replace_latest_project_revision
+    end
+
+    def build_editor_payload(images, note:)
+      images = Array(images)
+      upload_ids = images.map { |i| i["upload_id"].to_i }.compact.uniq
+      uploads = upload_ids.any? ? Upload.where(id: upload_ids).index_by(&:id) : {}
+
+      {
+        "images" =>
+          images.map do |i|
+            upload = uploads[i["upload_id"].to_i]
+            {
+              "id" => i["id"],
+              "upload_id" => i["upload_id"],
+              "short_url" => i["short_url"],
+              "image_url" => upload&.url,
+              "caption" => i["caption"].to_s,
+              "alt" => i["alt"],
+            }
+          end,
+        "note" => note.to_s,
+      }
     end
 
     # Compute once per serializer instance. Wrapped in a rescue so a bug

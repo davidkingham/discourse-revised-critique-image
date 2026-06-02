@@ -76,3 +76,121 @@
     }
   }
 }
+
+// ---- Phase 4: project revision editor ------------------------------------
+// Minimal layout — wide modal, two-column cards on desktop, stacked on
+// narrow viewports. Keeps the per-card UppyImageUploader visible because
+// it doubles as the Replace button (clicking its existing "Browse"
+// affordance swaps the card's upload via @onUploadDone). The card meta
+// column carries the position, caption input, and the move/remove
+// controls so screen readers can navigate them in source order.
+.project-revision-editor {
+  // Use the wider modal preset so the cards have room.
+  .d-modal__container {
+    max-width: 56rem;
+  }
+
+  &__description {
+    margin: 0 0 var(--space-3, 0.75rem);
+    color: var(--primary-medium);
+  }
+
+  &__note {
+    margin-bottom: var(--space-4, 1rem);
+
+    &-label {
+      display: block;
+      margin-bottom: var(--space-1, 0.25rem);
+      font-weight: 600;
+    }
+
+    &-input {
+      width: 100%;
+      resize: vertical;
+      min-height: 4rem;
+    }
+  }
+
+  &__cards {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: var(--space-3, 0.75rem);
+  }
+
+  &__card {
+    display: grid;
+    grid-template-columns: 180px 1fr;
+    gap: var(--space-3, 0.75rem);
+    padding: var(--space-3, 0.75rem);
+    background: var(--primary-very-low);
+    border: 1px solid var(--primary-low);
+    border-radius: var(--d-border-radius, 4px);
+
+    @media (width <= 640px) {
+      grid-template-columns: 1fr;
+    }
+
+    &-thumb {
+      // Compact the embedded UppyImageUploader so it acts as the card's
+      // visual + "Replace" affordance.
+      .image-uploader,
+      .file-uploader {
+        margin: 0;
+      }
+
+      img {
+        max-width: 100%;
+        height: auto;
+      }
+    }
+
+    &-meta {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-2, 0.5rem);
+    }
+
+    &-position {
+      font-weight: 600;
+      color: var(--primary);
+    }
+
+    &-caption-label {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-1, 0.25rem);
+      font-size: var(--font-down-1);
+    }
+
+    &-caption-input {
+      width: 100%;
+    }
+
+    &-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-1, 0.25rem);
+    }
+  }
+
+  &__add {
+    margin-top: var(--space-4, 1rem);
+    padding-top: var(--space-3, 0.75rem);
+    border-top: 1px solid var(--primary-low);
+
+    &-heading {
+      margin: 0 0 var(--space-2, 0.5rem);
+      font-size: var(--font-0);
+    }
+  }
+
+  &__error {
+    margin-top: var(--space-3, 0.75rem);
+    padding: var(--space-2, 0.5rem) var(--space-3, 0.75rem);
+    color: var(--danger);
+    background: var(--danger-low);
+    border-radius: var(--d-border-radius, 4px);
+  }
+}
