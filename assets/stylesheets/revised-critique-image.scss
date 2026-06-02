@@ -78,18 +78,20 @@
 }
 
 // ---- Phase 4: project revision editor ------------------------------------
-// Minimal layout — wide modal, two-column cards on desktop, stacked on
-// narrow viewports. Keeps the per-card UppyImageUploader visible because
-// it doubles as the Replace button (clicking its existing "Browse"
-// affordance swaps the card's upload via @onUploadDone). The card meta
-// column carries the position, caption input, and the move/remove
-// controls so screen readers can navigate them in source order.
-.project-revision-editor {
-  // Use the wider modal preset so the cards have room.
+// Uses Discourse's standard "-large" modal preset (set via the `class`
+// arg on DModal) so the container max-width comes from the platform.
+// The body already has overflow-y: auto and the container caps at 80vh
+// from core modal.scss — we just need to lay out the cards inside.
+.project-revision-editor.-large {
+  // 56rem comfortably fits the 4-column card actions row on desktop
+  // while still respecting `.d-modal__container { max-width: 80vw }`
+  // on smaller viewports.
   .d-modal__container {
-    max-width: 56rem;
+    --modal-max-width: 56rem;
   }
+}
 
+.project-revision-editor {
   &__description {
     margin: 0 0 var(--space-3, 0.75rem);
     color: var(--primary-medium);
@@ -121,7 +123,7 @@
 
   &__card {
     display: grid;
-    grid-template-columns: 180px 1fr;
+    grid-template-columns: 160px 1fr;
     gap: var(--space-3, 0.75rem);
     padding: var(--space-3, 0.75rem);
     background: var(--primary-very-low);
@@ -133,23 +135,34 @@
     }
 
     &-thumb {
-      // Compact the embedded UppyImageUploader so it acts as the card's
-      // visual + "Replace" affordance.
-      .image-uploader,
-      .file-uploader {
-        margin: 0;
-      }
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100px;
+      background: var(--secondary);
+      border-radius: var(--d-border-radius, 4px);
+      overflow: hidden;
+    }
 
-      img {
-        max-width: 100%;
-        height: auto;
-      }
+    &-image {
+      max-width: 100%;
+      max-height: 200px;
+      height: auto;
+      display: block;
+    }
+
+    &-placeholder {
+      padding: var(--space-2, 0.5rem);
+      color: var(--primary-medium);
+      font-size: var(--font-down-1);
+      text-align: center;
     }
 
     &-meta {
       display: flex;
       flex-direction: column;
       gap: var(--space-2, 0.5rem);
+      min-width: 0; // allow the meta column to shrink instead of pushing
     }
 
     &-position {
@@ -179,10 +192,15 @@
     margin-top: var(--space-4, 1rem);
     padding-top: var(--space-3, 0.75rem);
     border-top: 1px solid var(--primary-low);
+    display: flex;
+    align-items: center;
+    gap: var(--space-3, 0.75rem);
+    flex-wrap: wrap;
 
-    &-heading {
-      margin: 0 0 var(--space-2, 0.5rem);
-      font-size: var(--font-0);
+    &-helper {
+      margin: 0;
+      color: var(--primary-medium);
+      font-size: var(--font-down-1);
     }
   }
 
@@ -192,5 +210,16 @@
     color: var(--danger);
     background: var(--danger-low);
     border-radius: var(--d-border-radius, 4px);
+  }
+
+  &__file-input {
+    // Visually-hidden but still clickable via UppyUpload#openPicker().
+    // Don't use display: none — Uppy needs the input attached.
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
+    overflow: hidden;
   }
 }

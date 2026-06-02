@@ -3,10 +3,12 @@ import { tracked } from "@glimmer/tracking";
 import { concat, fn } from "@ember/helper";
 import { on } from "@ember/modifier";
 import { action } from "@ember/object";
+import { getOwner } from "@ember/owner";
+import didInsert from "@ember/render-modifiers/modifiers/did-insert";
 import { service } from "@ember/service";
-import UppyImageUploader from "discourse/components/uppy-image-uploader";
 import { ajax } from "discourse/lib/ajax";
 import { popupAjaxError } from "discourse/lib/ajax-error";
+import UppyUpload from "discourse/lib/uppy/uppy-upload";
 import { eq, not } from "discourse/truth-helpers";
 import DButton from "discourse/ui-kit/d-button";
 import DModal from "discourse/ui-kit/d-modal";
@@ -21,21 +23,56 @@ function generateLocalId() {
   return `new-${Date.now()}-${nextLocalId}`;
 }
 
+// Defensively rebuild an image entry so each card has a unique, non-blank
+// id even if the persisted data was corrupted upstream. Duplicate ids on
+// cards would also break Glimmer's @each key="id" reactivity.
+function normalizeBaselineImages(images) {
+  const seenIds = new Set();
+  return (images || []).map((img) => {
+    let id = img.id;
+    if (!id || typeof id !== "string" || seenIds.has(id)) {
+      id = generateLocalId();
+    }
+    seenIds.add(id);
+    return { ...img, id };
+  });
+}
+
 export default class ProjectRevisionEditor extends Component {
   @service router;
   @service siteSettings;
 
-  // The editable card list. Each entry mirrors the shape the backend
-  // expects on save: { id, upload_id, short_url, image_url, caption, alt }.
-  // image_url is purely for browser display; the server doesn't read it.
   @tracked images = [];
   @tracked note = "";
   @tracked submitting = false;
   @tracked errorMessage = null;
 
+  // Tracks where the next successful upload should go:
+  //   { kind: "add" }                 → push a new card at the end
+  //   { kind: "replace", id: <cardId> } → swap the named card's upload
+  // Reset to null after each upload is consumed.
+  @tracked nextUploadTarget = null;
+
+  // One shared file input + UppyUpload instance for both "Add Image"
+  // and per-card "Replace Image". Multiple per-card UppyUploaders made
+  // the modal noisy AND collided around UppyUpload's id-keyed appEvents
+  // bus; routing every upload through a single instance is simpler and
+  // matches how Discourse's composer handles inline upload buttons.
+  uppyUpload = new UppyUpload(getOwner(this), {
+    id: "project-revision-editor",
+    type: "revised_critique_image",
+    validateUploadedFilesOptions: { imagesOnly: true },
+    uploadDone: (upload) => this.routeUpload(upload),
+  });
+
   constructor() {
     super(...arguments);
     this.loadBaseline();
+  }
+
+  willDestroy() {
+    super.willDestroy(...arguments);
+    this.uppyUpload?.teardown?.();
   }
 
   get topic() {
@@ -63,6 +100,10 @@ export default class ProjectRevisionEditor extends Component {
 
   get atMaxImages() {
     return this.images.length >= this.maxImages;
+  }
+
+  get atMinImages() {
+    return this.images.length <= 1;
   }
 
   get canSave() {
@@ -98,35 +139,26 @@ export default class ProjectRevisionEditor extends Component {
     return i18n("discourse_revised_critique_image.project_editor.submit_add");
   }
 
-  // Pull the baseline images out of the serialized editor payload. For
-  // `add` we prefer the latest revision (so "add another" starts from
-  // where the user left off); for `replace_latest` we always use the
-  // latest. If neither is present we fall back to the original
-  // submission so the first project revision starts from the OP image set.
   loadBaseline() {
     const editor = this.topic?.project_revision_editor || {};
-    let baseline = null;
-
+    let baseline;
     if (this.isReplaceMode) {
-      baseline = editor.latest || null;
+      baseline = editor.latest || editor.original || { images: [], note: "" };
     } else {
-      baseline = editor.latest || editor.original || null;
+      baseline = editor.latest || editor.original || { images: [], note: "" };
     }
 
-    if (!baseline) {
-      baseline = editor.original || { images: [], note: "" };
-    }
-
-    this.images = (baseline.images || []).map((img) => ({
-      ...img,
-      // The note travels separately; per-image fields are immutable here
-      // except via the action methods below.
-    }));
-
-    // Pre-populate the note ONLY on replace_latest (editing in place);
-    // "add another" gets a fresh note so the user describes THIS round
-    // of changes, not the previous round's.
+    this.images = normalizeBaselineImages(baseline.images);
     this.note = this.isReplaceMode ? baseline.note || "" : "";
+
+    if (this.images.length === 0) {
+      // No baseline images — the editor still opens but a save will
+      // be blocked client-side by the atMinImages guard. Surface a
+      // hint so the OP knows what's missing.
+      this.errorMessage = i18n(
+        "discourse_revised_critique_image.project_editor.error_no_baseline"
+      );
+    }
   }
 
   isLast(index) {
@@ -137,6 +169,11 @@ export default class ProjectRevisionEditor extends Component {
     return i18n("discourse_revised_critique_image.project_editor.image_label", {
       number: index + 1,
     });
+  }
+
+  @action
+  registerFileInput(element) {
+    this.uppyUpload.setup(element);
   }
 
   @action
@@ -159,6 +196,7 @@ export default class ProjectRevisionEditor extends Component {
     const next = [...this.images];
     [next[index - 1], next[index]] = [next[index], next[index - 1]];
     this.images = next;
+    this.clearError();
   }
 
   @action
@@ -169,11 +207,12 @@ export default class ProjectRevisionEditor extends Component {
     const next = [...this.images];
     [next[index], next[index + 1]] = [next[index + 1], next[index]];
     this.images = next;
+    this.clearError();
   }
 
   @action
   removeImage(index) {
-    if (this.images.length <= 1) {
+    if (this.atMinImages) {
       this.errorMessage = i18n(
         "discourse_revised_critique_image.project_editor.error_min_one_image"
       );
@@ -182,25 +221,11 @@ export default class ProjectRevisionEditor extends Component {
     const next = [...this.images];
     next.splice(index, 1);
     this.images = next;
+    this.clearError();
   }
 
   @action
-  onReplaceUploaded(cardId, upload) {
-    const next = this.images.map((img) =>
-      img.id === cardId
-        ? {
-            ...img,
-            upload_id: upload.id,
-            short_url: upload.short_url,
-            image_url: upload.url,
-          }
-        : img
-    );
-    this.images = next;
-  }
-
-  @action
-  onAddUploaded(upload) {
+  triggerAdd() {
     if (this.atMaxImages) {
       this.errorMessage = i18n(
         "discourse_revised_critique_image.project_editor.error_too_many_images",
@@ -208,23 +233,51 @@ export default class ProjectRevisionEditor extends Component {
       );
       return;
     }
-    this.images = [
-      ...this.images,
-      {
-        id: generateLocalId(),
-        upload_id: upload.id,
-        short_url: upload.short_url,
-        image_url: upload.url,
-        caption: "",
-        alt: `Image ${this.images.length + 1}`,
-      },
-    ];
+    this.nextUploadTarget = { kind: "add" };
+    this.uppyUpload.openPicker();
   }
 
-  // The Uppy uploader instance for "Add" doesn't auto-clear after
-  // upload completes, but we don't surface its preview either — the
-  // newly-added image already shows up as a card. We do clear the
-  // generic error message on any successful action.
+  @action
+  triggerReplace(cardId) {
+    this.nextUploadTarget = { kind: "replace", id: cardId };
+    this.uppyUpload.openPicker();
+  }
+
+  // Single sink for every completed upload from the shared UppyUpload.
+  routeUpload(upload) {
+    const target = this.nextUploadTarget || { kind: "add" };
+    this.nextUploadTarget = null;
+
+    if (target.kind === "replace") {
+      this.images = this.images.map((img) =>
+        img.id === target.id
+          ? {
+              ...img,
+              upload_id: upload.id,
+              short_url: upload.short_url,
+              image_url: upload.url,
+            }
+          : img
+      );
+    } else {
+      if (this.atMaxImages) {
+        return;
+      }
+      this.images = [
+        ...this.images,
+        {
+          id: generateLocalId(),
+          upload_id: upload.id,
+          short_url: upload.short_url,
+          image_url: upload.url,
+          caption: "",
+          alt: `Image ${this.images.length + 1}`,
+        },
+      ];
+    }
+    this.clearError();
+  }
+
   clearError() {
     this.errorMessage = null;
   }
@@ -254,12 +307,11 @@ export default class ProjectRevisionEditor extends Component {
         }
       );
 
+      // Close BEFORE refreshing so the modal is fully unmounted by
+      // the time the route re-renders the topic.
       this.args.closeModal();
       this.router.refresh();
     } catch (e) {
-      // popupAjaxError surfaces the server's `errors` array via the
-      // global toast UI; we also pin the message into the modal so the
-      // user can see the failure without dismissing the modal first.
       const body = e?.jqXHR?.responseJSON || {};
       const messages = body.errors || [];
       this.errorMessage =
@@ -273,7 +325,7 @@ export default class ProjectRevisionEditor extends Component {
 
   <template>
     <DModal
-      class="project-revision-editor"
+      class="project-revision-editor -large"
       @title={{this.title}}
       @closeModal={{@closeModal}}
     >
@@ -304,19 +356,27 @@ export default class ProjectRevisionEditor extends Component {
         </div>
 
         <ol class="project-revision-editor__cards" aria-live="polite">
-          {{#each this.images key="id" as |img idx|}}
+          {{#each this.images key="id" as |card idx|}}
             <li
               class="project-revision-editor__card"
-              data-card-id={{img.id}}
+              data-card-id={{card.id}}
               data-position={{idx}}
             >
               <div class="project-revision-editor__card-thumb">
-                <UppyImageUploader
-                  @id={{concat "prj-card-" img.id}}
-                  @type="revised_critique_image"
-                  @imageUrl={{img.image_url}}
-                  @onUploadDone={{fn this.onReplaceUploaded img.id}}
-                />
+                {{#if card.image_url}}
+                  <img
+                    class="project-revision-editor__card-image"
+                    src={{card.image_url}}
+                    alt={{card.alt}}
+                    loading="lazy"
+                  />
+                {{else}}
+                  <div class="project-revision-editor__card-placeholder">
+                    {{i18n
+                      "discourse_revised_critique_image.project_editor.image_pending"
+                    }}
+                  </div>
+                {{/if}}
               </div>
               <div class="project-revision-editor__card-meta">
                 <span class="project-revision-editor__card-position">
@@ -327,9 +387,10 @@ export default class ProjectRevisionEditor extends Component {
                     "discourse_revised_critique_image.project_editor.caption_label"
                   }}
                   <input
+                    id={{concat "prj-caption-" card.id}}
                     type="text"
                     class="project-revision-editor__card-caption-input"
-                    value={{img.caption}}
+                    value={{card.caption}}
                     {{on "input" (fn this.updateCaption idx)}}
                   />
                 </label>
@@ -338,17 +399,27 @@ export default class ProjectRevisionEditor extends Component {
                     class="project-revision-editor__card-move-left"
                     @action={{fn this.moveLeft idx}}
                     @disabled={{eq idx 0}}
+                    @icon="arrow-left"
                     @label="discourse_revised_critique_image.project_editor.move_left"
                   />
                   <DButton
                     class="project-revision-editor__card-move-right"
                     @action={{fn this.moveRight idx}}
                     @disabled={{this.isLast idx}}
+                    @icon="arrow-right"
                     @label="discourse_revised_critique_image.project_editor.move_right"
+                  />
+                  <DButton
+                    class="project-revision-editor__card-replace"
+                    @action={{fn this.triggerReplace card.id}}
+                    @icon="arrows-rotate"
+                    @label="discourse_revised_critique_image.project_editor.replace"
                   />
                   <DButton
                     class="project-revision-editor__card-remove btn-danger"
                     @action={{fn this.removeImage idx}}
+                    @disabled={{this.atMinImages}}
+                    @icon="trash-can"
                     @label="discourse_revised_critique_image.project_editor.remove"
                   />
                 </div>
@@ -357,26 +428,36 @@ export default class ProjectRevisionEditor extends Component {
           {{/each}}
         </ol>
 
-        {{#unless this.atMaxImages}}
-          <div class="project-revision-editor__add">
-            <h4 class="project-revision-editor__add-heading">
-              {{i18n
-                "discourse_revised_critique_image.project_editor.add_image_heading"
-              }}
-            </h4>
-            <UppyImageUploader
-              @id="prj-editor-add"
-              @type="revised_critique_image"
-              @onUploadDone={{this.onAddUploaded}}
-            />
-          </div>
-        {{/unless}}
+        <div class="project-revision-editor__add">
+          <DButton
+            class="btn-default project-revision-editor__add-button"
+            @action={{this.triggerAdd}}
+            @disabled={{this.atMaxImages}}
+            @icon="plus"
+            @label="discourse_revised_critique_image.project_editor.add_image"
+          />
+          <p class="project-revision-editor__add-helper">
+            {{i18n
+              "discourse_revised_critique_image.project_editor.add_image_helper"
+              max=this.maxImages
+            }}
+          </p>
+        </div>
 
         {{#if this.errorMessage}}
           <p class="project-revision-editor__error" role="alert">
             {{this.errorMessage}}
           </p>
         {{/if}}
+
+        <input
+          type="file"
+          class="project-revision-editor__file-input"
+          accept="image/*"
+          aria-hidden="true"
+          tabindex="-1"
+          {{didInsert this.registerFileInput}}
+        />
       </:body>
 
       <:footer>
